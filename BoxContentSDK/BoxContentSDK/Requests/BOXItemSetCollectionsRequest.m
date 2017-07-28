@@ -18,6 +18,17 @@
 @property (nonatomic, readwrite, strong) NSArray *collectionIDs;
 @property (nonatomic, readwrite, strong) NSString *resource;
 
+/// Properties related to Background tasks
+
+/**
+ Local path of json formatted collectionIDs
+ */
+@property (nonatomic, readwrite, strong) NSString *localFilePath;
+/**
+ Caller provided Unique ID to associate with the request newly added to the operations queue
+ */
+@property (nonatomic, readwrite, copy) NSString *associateId;
+
 @end
 
 @implementation BOXItemSetCollectionsRequest
@@ -34,12 +45,36 @@
     return self;
 }
 
+- (instancetype)initWithItemID:(NSString *)itemID
+                     localPath:(NSString *)localPath
+                      resource:(NSString *)resource
+                   associateId:(NSString *)associateId
+{
+    if (self = [super init]) {
+        _itemID = itemID;
+        _localFilePath = localPath;
+        _resource = resource;
+        _associateId = associateId;
+    }
+    return self;
+}
+
 - (instancetype)initFileSetCollectionsRequestForFileWithID:(NSString *)fileID
                                              collectionIDs:(NSArray *)collectionIDs
 {
     return [self initWithItemID:fileID
                   collectionIDs:collectionIDs
                        resource:BOXAPIResourceFiles];
+}
+
+- (instancetype)initFileSetCollectionsRequestForFileWithID:(NSString *)fileID
+                                                 localPath:(NSString *)localPath
+                                               associateId:(NSString *)associateId
+{
+    return [self initWithItemID:fileID
+                      localPath:localPath
+                       resource:BOXAPIResourceFiles
+                    associateId:associateId];
 }
 
 - (instancetype)initFolderSetCollectionsRequestForFolderWithID:(NSString *)folderID
@@ -50,12 +85,32 @@
                        resource:BOXAPIResourceFolders];
 }
 
+- (instancetype)initFolderSetCollectionsRequestForFolderWithID:(NSString *)folderID
+                                                     localPath:(NSString *)localPath
+                                                   associateId:(NSString *)associateId
+{
+    return [self initWithItemID:folderID
+                      localPath:localPath
+                       resource:BOXAPIResourceFolders
+                    associateId:associateId];
+}
+
 - (instancetype)initBookmarkSetCollectionsRequestForBookmarkWithID:(NSString *)bookmarkID
                                                      collectionIDs:(NSArray *)collectionIDs
 {
         return [self initWithItemID:bookmarkID
                       collectionIDs:collectionIDs
                            resource:BOXAPIResourceBookmarks];
+}
+
+- (instancetype)initBookmarkSetCollectionsRequestForBookmarkWithID:(NSString *)bookmarkID
+                                                         localPath:(NSString *)localPath
+                                                       associateId:(NSString *)associateId
+{
+    return [self initWithItemID:bookmarkID
+                      localPath:localPath
+                       resource:BOXAPIResourceBookmarks
+                    associateId:associateId];
 }
 
 - (BOXAPIOperation *)createOperation
@@ -73,10 +128,17 @@
     }
 
     NSMutableArray *bodyContent = [NSMutableArray array];
-    for (NSString *collectionID in self.collectionIDs) {
-        [bodyContent addObject:@{BOXAPIObjectKeyID : collectionID}];
+    NSMutableDictionary *bodyDictionary = [NSMutableDictionary dictionary];
+    
+    if ([self.localFilePath length] > 0 && [[NSFileManager defaultManager] fileExistsAtPath:self.localFilePath]) {
+        NSData *jsonData = [[NSFileManager defaultManager] contentsAtPath:self.localFilePath];
+        bodyDictionary = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:nil];
+    } else {
+        for (NSString *collectionID in self.collectionIDs) {
+            [bodyContent addObject:@{BOXAPIObjectKeyID : collectionID}];
+        }
+        [bodyDictionary addEntriesFromDictionary:@{BOXAPIObjectKeyCollections : bodyContent}];
     }
-    NSDictionary *bodyDictionary = @{BOXAPIObjectKeyCollections : bodyContent};
     
     operation = [self JSONOperationWithURL:url 
                                 HTTPMethod:BOXAPIHTTPMethodPUT
@@ -84,6 +146,7 @@
                             bodyDictionary:bodyDictionary
                           JSONSuccessBlock:nil
                               failureBlock:nil];
+    operation.associateId = self.associateId;
     
     return operation;
 }
